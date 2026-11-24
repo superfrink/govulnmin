@@ -5,7 +5,10 @@ on:
     branches: [main]
   pull_request:
   schedule:
+    # Weekly, Monday 05:17 UTC. A dry run, so an advisory in the runner's Go
+    # release shows up here without failing anything.
     - cron: '17 5 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,8 +18,8 @@ jobs:
     name: scan this module
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
 

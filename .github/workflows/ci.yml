@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly, so a new Go release or a toolchain change cannot silently
+    # rot the build. Same Monday morning slot as the vulncheck scan.
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -21,8 +26,8 @@ jobs:
       matrix:
         go: ['1.22.x', 'stable']
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ matrix.go }}
           check-latest: true
@@ -56,8 +61,8 @@ jobs:
         goos: [linux, darwin, windows]
         goarch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: build
@@ -71,8 +76,8 @@ jobs:
     name: goreleaser check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: actions/checkout@v7
+      - uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser
           version: '~> v2'
