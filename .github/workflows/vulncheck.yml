@@ -1,0 +1,30 @@
+name: vulncheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 5 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  govulnmin:
+    name: scan this module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # Dogfooding: govulnmin scans itself. A dry run, so a stdlib advisory
+      # in the runner's Go release does not break CI.
+      - name: govulnmin -n
+        run: go run . -n -v
+
+      - name: govulncheck
+        continue-on-error: true
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
