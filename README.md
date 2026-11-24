@@ -7,6 +7,22 @@ Fixes Go vulnerabilities with the smallest version bump that clears them, then p
 
 `govulncheck` tells you what is vulnerable. Most of the time the answer is a version bump, and most of the time you want the *smallest* one: the lowest release that contains the fix, not the latest release of everything. govulnmin works that out and applies it.
 
+## Contents
+
+- [What it does](#what-it-does)
+- [Install](#install)
+- [Use](#use)
+- [Exit status](#exit-status)
+- [When the build or the tests fail](#when-the-build-or-the-tests-fail)
+- [Verifying a release](#verifying-a-release)
+- [What "smallest" means](#what-smallest-means)
+- [Library or application](#library-or-application)
+- [Run it on a branch](#run-it-on-a-branch)
+- [Run it on a schedule, read-only](#run-it-on-a-schedule-read-only)
+- [Limitations](#limitations)
+- [Build and test](#build-and-test)
+- [License](#license)
+
 ## What it does
 
 1. Runs `govulncheck` over the packages you name (default `./...`) and reads the JSON output.
@@ -16,6 +32,51 @@ Fixes Go vulnerabilities with the smallest version bump that clears them, then p
 5. Scans again. Anything that survives is listed, and the exit status is 1.
 
 With `-n` it stops after step 2: it prints the plan, changes nothing, and exits 1 if the plan is not empty. So a plain `govulnmin -n` is a vulnerability check you can put in CI.
+
+## Install
+
+```
+go install github.com/superfrink/govulnmin@latest
+```
+
+Or take a binary from [releases](https://github.com/superfrink/govulnmin/releases).
+
+It needs `govulncheck`. If that is not on your PATH, govulnmin runs `go run golang.org/x/vuln/cmd/govulncheck@latest`, so the scan is never done by a stale copy. That is a deliberate exception to pinning; CI pins the version instead.
+
+## Use
+
+```
+govulnmin            # fix this module
+govulnmin -n         # dry run: show the plan, change nothing, exit 1 if there is work
+govulnmin ./cmd/...  # limit the scan
+```
+
+Typical output:
+
+```
+$ govulnmin -n -all
+scanning github.com/you/thing with go1.25.0
+scanner: govulncheck@v1.8.0
+66 advisory(s), 3 with a call path
+
+  toolchain  go1.25.0 -> go1.26.11  (GO-2025-3955, GO-2025-4006, GO-2025-4007 and 58 more)
+             no fix exists for Go 1.25; the lowest fixed release is go1.26.11
+  golang.org/x/text  v0.3.0 -> v0.41.0  (GO-2020-0015, GO-2021-0113, GO-2022-1059 and 2 more)
+
+dry run: no changes made, 2 change(s) needed
+```
+
+Flags:
+
+| flag | meaning |
+| --- | --- |
+| `-n` | dry run: print the plan, change nothing, exit 1 if there is something to fix |
+| `-all` | also fix findings without a call path; the default matches `govulncheck` and only fixes findings it can trace to a call |
+| `-no-modules` | leave module versions alone |
+| `-no-toolchain` | leave the go and toolchain directives alone |
+| `-dir` | module directory (default `.`) |
+| `-govulncheck` | govulncheck binary to use |
+| `-v` | echo each command |
 
 ## Exit status
 
@@ -60,16 +121,6 @@ Two consequences worth knowing:
 - govulnmin starts from the tree in front of it, not from HEAD. A dirty go.mod after a failure changes the next run's starting point, so restore it before trying again.
 - A failed build or test does not mean the bump was wrong. It means the new version did not compile or did not pass. Read the error before reaching for `git restore`.
 
-## Install
-
-```
-go install github.com/superfrink/govulnmin@latest
-```
-
-Or take a binary from [releases](https://github.com/superfrink/govulnmin/releases).
-
-It needs `govulncheck`. If that is not on your PATH, govulnmin runs `go run golang.org/x/vuln/cmd/govulncheck@latest`, so the scan is never done by a stale copy. That is a deliberate exception to pinning; CI pins the version instead.
-
 ## Verifying a release
 
 Releases are signed and attested. No account and no key needed to check them:
@@ -90,41 +141,6 @@ gh attestation verify govulnmin_0.1.0_linux_amd64.tar.gz --repo superfrink/govul
 ```
 
 Signing is keyless: cosign takes a short-lived certificate from Fulcio, issued to the workflow itself, and records the signing in the Rekor transparency log. That certificate cannot be produced by anything but a run of `.github/workflows/release.yml` in this repository on a `v*` tag, which is what ties the signature to the code: the attestation pins the commit SHA, `go version -m govulnmin` prints the same revision embedded in the binary, and the build is reproducible (`-trimpath`, commit timestamps), so a tag can be rebuilt and the hashes compared.
-
-## Use
-
-```
-govulnmin            # fix this module
-govulnmin -n         # dry run: show the plan, change nothing, exit 1 if there is work
-govulnmin ./cmd/...  # limit the scan
-```
-
-Typical output:
-
-```
-$ govulnmin -n -all
-scanning github.com/you/thing with go1.25.0
-scanner: govulncheck@v1.8.0
-66 advisory(s), 3 with a call path
-
-  toolchain  go1.25.0 -> go1.26.11  (GO-2025-3955, GO-2025-4006, GO-2025-4007 and 58 more)
-             no fix exists for Go 1.25; the lowest fixed release is go1.26.11
-  golang.org/x/text  v0.3.0 -> v0.41.0  (GO-2020-0015, GO-2021-0113, GO-2022-1059 and 2 more)
-
-dry run: no changes made, 2 change(s) needed
-```
-
-Flags:
-
-| flag | meaning |
-| --- | --- |
-| `-n` | dry run: print the plan, change nothing, exit 1 if there is something to fix |
-| `-all` | also fix findings without a call path; the default matches `govulncheck` and only fixes findings it can trace to a call |
-| `-no-modules` | leave module versions alone |
-| `-no-toolchain` | leave the go and toolchain directives alone |
-| `-dir` | module directory (default `.`) |
-| `-govulncheck` | govulncheck binary to use |
-| `-v` | echo each command |
 
 ## What "smallest" means
 
