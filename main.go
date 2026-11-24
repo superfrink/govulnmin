@@ -3,7 +3,8 @@
 //
 // It runs govulncheck, works out the lowest fixed version for each affected
 // module and for the Go toolchain, applies those bumps, runs go build and
-// go test, and scans again. If any finding survives, it exits 1.
+// go test, and scans again. If any finding survives, it exits 1. A dry run
+// exits 1 too when the plan is not empty, so it can be used as a check.
 package main
 
 import (
@@ -23,7 +24,8 @@ It scans with govulncheck, bumps only to the lowest version that fixes each
 finding, then runs go build, go test and a second scan to prove the result.
 
 flags:
-  -n              dry run: print the plan, change nothing
+  -n              dry run: print the plan, change nothing, exit 1 if there
+                  is something to fix
   -reachable      only fix findings with a call path, not every finding
   -no-modules     do not touch module versions
   -no-toolchain   do not touch the go/toolchain directives
@@ -32,7 +34,9 @@ flags:
                   falling back to "go run golang.org/x/vuln/cmd/govulncheck@latest")
   -v              echo each command
 
-exit status: 0 fixed or clean, 1 vulnerabilities remain, 2 error
+exit status: 0 clean, or fixed and verified clean
+             1 advisories remain, including a dry run with work to do
+             2 error: bad flags, scan failed, go get failed, build or test failed
 `
 
 var (
@@ -134,13 +138,15 @@ func fix(r *runner, o options) (int, error) {
 	}
 	printNotes(p)
 	if p.empty() {
+		// Advisories remain and no bump clears them, so this is not a clean
+		// result: report it the same way as a finding that survived a fix.
 		fmt.Fprintln(outW, "nothing to bump")
-		return 0, nil
+		return 1, nil
 	}
 
 	if o.dryRun {
-		fmt.Fprintln(outW, "\ndry run: no changes made")
-		return 0, nil
+		fmt.Fprintf(outW, "\ndry run: no changes made, %d change(s) needed\n", p.changes())
+		return 1, nil
 	}
 
 	if err := apply(r, p); err != nil {
@@ -206,6 +212,15 @@ func verify(r *runner, o options) (int, error) {
 	}
 	fmt.Fprintln(outW, "clean: 0 advisories")
 	return 0, nil
+}
+
+// changes counts the edits apply would make.
+func (p *plan) changes() int {
+	n := len(p.modules)
+	if p.toolchain != nil {
+		n++
+	}
+	return n
 }
 
 func printPlan(p *plan) {

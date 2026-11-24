@@ -61,8 +61,9 @@ func TestDryRunPrintsPlanAndLeavesGoModAlone(t *testing.T) {
 	var c capture
 	c.start(t)
 	code := run([]string{"-n", "-no-toolchain", "-govulncheck", fake, "-dir", dir})
-	if code != 0 {
-		t.Fatalf("exit %d, want 0\nstderr: %s", code, c.err.String())
+	// A dry run with work to do is a check that failed: exit 1.
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\nstderr: %s", code, c.err.String())
 	}
 	out := c.out.String()
 	if !strings.Contains(out, "golang.org/x/text  v0.3.0 -> ") {
@@ -134,5 +135,30 @@ func TestBadFlagExitsTwo(t *testing.T) {
 	c.start(t)
 	if code := run([]string{"-nope"}); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
+	}
+}
+
+// An advisory with no fixed release leaves nothing to bump, but the module is
+// still vulnerable, so a dry run has to fail the same way a real run does.
+func TestNothingToBumpExitsOne(t *testing.T) {
+	scanJSON := `{"config":{"scanner_name":"govulncheck","scanner_version":"1.8.0","go_version":"go1.25.0"}}
+{"osv":{"id":"GO-TEST-0002","summary":"no fix yet","affected":[{"package":{"name":"golang.org/x/text","ecosystem":"Go"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"}]}]}]}}
+{"finding":{"osv":"GO-TEST-0002","trace":[{"module":"golang.org/x/text","version":"v0.3.0","package":"golang.org/x/text/language","function":"Parse"}]}}
+`
+	dir, fake := testModule(t, scanJSON)
+
+	for _, args := range [][]string{
+		{"-n", "-no-toolchain", "-govulncheck", fake, "-dir", dir},
+		{"-no-toolchain", "-govulncheck", fake, "-dir", dir},
+	} {
+		var c capture
+		c.start(t)
+		code := run(args)
+		if code != 1 {
+			t.Errorf("%v: exit %d, want 1\nstdout: %s", args, code, c.out.String())
+		}
+		if !strings.Contains(c.out.String(), "nothing to bump") {
+			t.Errorf("%v: expected a nothing-to-bump notice:\n%s", args, c.out.String())
+		}
 	}
 }
