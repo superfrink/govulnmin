@@ -162,3 +162,52 @@ func TestNothingToBumpExitsOne(t *testing.T) {
 		}
 	}
 }
+
+// A replace directive decides which code is compiled, so bumping the require
+// line cannot fix the finding. govulnmin has to see the replacement's version
+// and say that the directive is the thing to edit.
+func TestReplacedModuleIsReportedNotBumped(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake govulncheck is a shell script")
+	}
+	dir := t.TempDir()
+	dep := filepath.Join(dir, "dep")
+	if err := os.MkdirAll(dep, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, content string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "go.mod"), "module example.com/fx\n\ngo 1.22\n\n"+
+		"require example.com/dep v0.1.0\n\nreplace example.com/dep => ./dep\n")
+	write(filepath.Join(dir, "fx.go"), "package fx\n")
+	write(filepath.Join(dep, "go.mod"), "module example.com/dep\n\ngo 1.22\n")
+	write(filepath.Join(dep, "dep.go"), "package dep\n")
+
+	scanJSON := `{"config":{"scanner_name":"govulncheck","scanner_version":"1.8.0","go_version":"go1.25.0"}}
+{"osv":{"id":"GO-TEST-0003","summary":"replaced module","affected":[{"package":{"name":"example.com/dep","ecosystem":"Go"},"ranges":[{"type":"SEMVER","events":[{"introduced":"0"},{"fixed":"0.2.0"}]}]}]}}
+{"finding":{"osv":"GO-TEST-0003","trace":[{"module":"example.com/dep","version":"v0.1.0","package":"example.com/dep","function":"Foo"}]}}
+`
+	write(filepath.Join(dir, "scan.json"), scanJSON)
+	fake := filepath.Join(dir, "govulncheck")
+	if err := os.WriteFile(fake, []byte("#!/bin/sh\ncat "+filepath.Join(dir, "scan.json")+"\nexit 3\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	var c capture
+	c.start(t)
+	code := run([]string{"-n", "-no-toolchain", "-govulncheck", fake, "-dir", dir})
+	out := c.out.String()
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\nstdout: %s\nstderr: %s", code, out, c.err.String())
+	}
+	if !strings.Contains(out, "replaced by a local directory") {
+		t.Errorf("no note about the replace directive:\n%s", out)
+	}
+	if strings.Contains(out, "example.com/dep  v0.1.0 ->") {
+		t.Errorf("planned a bump that the replace directive would undo:\n%s", out)
+	}
+}

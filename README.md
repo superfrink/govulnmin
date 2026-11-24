@@ -155,7 +155,7 @@ Also not covered:
 
 - **Nested modules and workspaces.** One module per run, the one in `-dir`. Sibling modules listed in a `go.work` are left alone; run it once per module.
 - **`vendor/`.** govulnmin runs `go get` and `go mod tidy`, never `go mod vendor`. In a vendored repo the build after a bump fails with `inconsistent vendoring`; run `go mod vendor` and commit the result.
-- **`replace` directives.** The version of a replaced module is read from `go list -m`, which reports the version *before* the replacement. If a replace pins a module below the fixed release, govulnmin sees the higher version and reports "no fixed version applies to this build" instead of bumping it. Check replace directives by hand when a `-n` run looks too quiet.
+- **`replace` directives.** govulnmin reads the *replacement's* version, since the replacement is what gets compiled. A replaced module is reported, never bumped: bumping the require line would not change what is built, so the note names the replacement and you edit the directive by hand.
 - **Code changes.** govulnmin moves versions. If an advisory needs a new major version, an API change, or work in your own code, it reports it and stops.
 - **One build configuration.** `go build ./...` and `go test ./...` run on the host platform, with no build tags, so platform-specific files and tag-gated code are not compiled. A bump can still break them.
 

@@ -255,6 +255,14 @@ func buildPlan(s *scan, b *build, reachableOnly bool) *plan {
 			}
 			continue
 		}
+		// A replace directive decides what is built, so bumping the require
+		// line would not change the compiled code.
+		if why, ok := b.replaced[mod]; ok {
+			p.notes = append(p.notes, fmt.Sprintf(
+				"%s: replaced by %s in go.mod; fixed by editing the replace directive, since a version bump would not change what is built",
+				mod, why))
+			continue
+		}
 		cur, _ := parseVersion(b.modules[mod])
 		// A fix in a new major version is a code change, not a bump: the
 		// module path itself would have to change.
