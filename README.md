@@ -39,6 +39,12 @@ With `-n` it stops after step 2: it prints the plan, changes nothing, and exits 
 go install github.com/superfrink/govulnmin@latest
 ```
 
+For CI, pin a version instead of floating:
+
+```
+go install github.com/superfrink/govulnmin@v0.1.0
+```
+
 Or take a binary from [releases](https://github.com/superfrink/govulnmin/releases).
 
 It needs `govulncheck`. If that is not on your PATH, govulnmin runs `go run golang.org/x/vuln/cmd/govulncheck@latest`, so the scan is never done by a stale copy. That is a deliberate exception to pinning; CI pins the version instead.
@@ -90,7 +96,7 @@ Exit 2 is a tool-level error, so it never means "nothing happened". A failed bui
 
 ## When the build or the tests fail
 
-Nothing is reverted. The bumps are already in go.mod by the time the build runs, so a failure stops there, exits 2, and leaves go.mod, go.sum and the rest of the tree exactly as govulnmin left them — new versions included — for you to look at:
+Nothing is reverted. A failure stops there, exits 2, and leaves the tree exactly as govulnmin left it — bumps in go.mod and go.sum included — for you to look at:
 
 ```
 $ govulnmin
@@ -173,11 +179,11 @@ govulnmin
 git diff go.mod go.sum
 ```
 
-If the build or the tests fail, the diff is still there to read; `git restore go.mod go.sum` discards it.
+If the build or the tests fail, the diff is there to read, and `git restore go.mod go.sum` discards it.
 
 ## Run it on a schedule, read-only
 
-`docs/example-scheduled.yml` is a workflow you can drop into any Go repo: it runs `govulnmin -n` on a weekly cron and needs nothing but `contents: read`, because a dry run changes nothing. A finding turns the job red; fix it by running govulnmin locally and merging the result, or by granting the workflow write access and letting it do the bump — the README in that case is the same but the permissions block becomes `contents: write` and the run drops the `-n`.
+`docs/example-scheduled.yml` is a workflow you can drop into any Go repo: it runs `govulnmin -n` on a weekly cron and needs nothing but `contents: read`, because a dry run changes nothing. A finding turns the job red. Fix it one of two ways: run govulnmin locally and merge the result, or grant the workflow write access and let it do the bump. Either way the workflow is the same; with write access the permissions block becomes `contents: write` and the run drops the `-n`.
 
 Scheduled jobs should not float: the example pins govulnmin to a released version, so the same code always produces the same plan.
 
@@ -210,7 +216,7 @@ Anything else is not understood. If an advisory's `fixed` value will not parse a
 
 ### It is only as complete as govulncheck
 
-Findings come from `govulncheck`'s symbol-level analysis. By default govulnmin matches govulncheck and fixes only findings with a call path into vulnerable code; `-all` widens it to every advisory, including ones where the vulnerable module is in the build graph but nothing calls it — fixing those still matters for supply-chain scanners, and a bump is usually cheap. Calls that only happen through reflection, `unsafe`, plugins or generated wrappers can be missed, so a clean exit means govulncheck is clean, not that the program is safe. (Until v0.1.0 the flag was the other way round: everything was fixed by default and `-reachable` narrowed it.)
+Findings come from `govulncheck`'s symbol-level analysis. By default govulnmin matches govulncheck and fixes only findings with a call path into vulnerable code; `-all` widens it to every advisory, including ones where the vulnerable module is in the build graph but nothing calls it — fixing those still matters for supply-chain scanners, and a bump is usually cheap. Calls that only happen through reflection, `unsafe`, plugins or generated wrappers can be missed, so a clean exit means govulncheck is clean, not that the program is safe. (The default changed in v0.1.0; the details are in the changelog.)
 
 ## Build and test
 
