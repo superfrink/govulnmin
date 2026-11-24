@@ -1,0 +1,44 @@
+# Scheduled vulnerability check with read-only access.
+#
+# govulnmin runs as a dry run (-n): it plans the fixes and exits 1 when
+# there is something to fix, which turns the job red. It never touches
+# go.mod, so the workflow needs no write access at all.
+#
+# Copy this to .github/workflows/vulncheck.yml in your repo.
+
+name: vulncheck
+
+on:
+  schedule:
+    # 14:05 UTC every Monday. Pick your own minute: the top of the hour
+    # is when everyone's runs queue.
+    - cron: '5 14 * * 1'
+  # Also on demand from the Actions tab, for checking right after a
+  # dependency change.
+  workflow_dispatch:
+
+# Read-only: the job cannot push, cannot open issues, cannot change
+# anything. It can only report.
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+
+      # Pin the version: a scheduled job should produce the same result
+      # on the same code, so it must not float.
+      - name: install govulnmin
+        run: go install github.com/superfrink/govulnmin@v0.1.0
+
+      # -n plans and exits 1 if there is work to do, without changing
+      # anything. Exit 2 (an error, not a finding) reads the same in the
+      # UI, so the log is where you tell them apart.
+      - name: check for fixable advisories
+        run: govulnmin -n

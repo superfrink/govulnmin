@@ -159,6 +159,12 @@ git diff go.mod go.sum
 
 If the build or the tests fail, the diff is still there to read; `git restore go.mod go.sum` discards it.
 
+## Run it on a schedule, read-only
+
+`docs/example-scheduled.yml` is a workflow you can drop into any Go repo: it runs `govulnmin -n` on a weekly cron and needs nothing but `contents: read`, because a dry run changes nothing. A finding turns the job red; fix it by running govulnmin locally and merging the result, or by granting the workflow write access and letting it do the bump — the README in that case is the same but the permissions block becomes `contents: write` and the run drops the `-n`.
+
+Scheduled jobs should not float: the example pins govulnmin to a released version, so the same code always produces the same plan.
+
 ## Limitations
 
 ### It only knows about go.mod
