@@ -102,7 +102,7 @@ govulnmin ./cmd/...  # limit the scan
 Typical output:
 
 ```
-$ govulnmin -n
+$ govulnmin -n -all
 scanning github.com/you/thing with go1.25.0
 scanner: govulncheck@v1.8.0
 66 advisory(s), 3 with a call path
@@ -119,7 +119,7 @@ Flags:
 | flag | meaning |
 | --- | --- |
 | `-n` | dry run: print the plan, change nothing, exit 1 if there is something to fix |
-| `-reachable` | only fix findings with a call path, instead of every finding |
+| `-all` | also fix findings without a call path; the default matches `govulncheck` and only fixes findings it can trace to a call |
 | `-no-modules` | leave module versions alone |
 | `-no-toolchain` | leave the go and toolchain directives alone |
 | `-dir` | module directory (default `.`) |
@@ -188,7 +188,7 @@ Anything else is not understood. If an advisory's `fixed` value will not parse a
 
 ### It is only as complete as govulncheck
 
-Findings come from `govulncheck`'s symbol-level analysis. Calls that only happen through reflection, `unsafe`, plugins or generated wrappers can be missed, and by default govulnmin fixes findings with and without a call path (`-reachable` narrows it to the ones it can trace). A clean exit means govulncheck is clean, not that the program is safe.
+Findings come from `govulncheck`'s symbol-level analysis. By default govulnmin matches govulncheck and fixes only findings with a call path into vulnerable code; `-all` widens it to every advisory, including ones where the vulnerable module is in the build graph but nothing calls it — fixing those still matters for supply-chain scanners, and a bump is usually cheap. Calls that only happen through reflection, `unsafe`, plugins or generated wrappers can be missed, so a clean exit means govulncheck is clean, not that the program is safe. (Until v0.1.0 the flag was the other way round: everything was fixed by default and `-reachable` narrowed it.)
 
 ## Build and test
 

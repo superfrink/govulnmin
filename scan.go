@@ -176,7 +176,7 @@ type toolchainChange struct {
 type plan struct {
 	findings  int // distinct advisories to fix
 	called    int // of those, how many have a call path
-	skipped   int // findings left alone by -reachable
+	skipped   int // findings left alone because they have no call path
 	modules   []modChange
 	toolchain *toolchainChange
 	notes     []string
@@ -185,7 +185,7 @@ type plan struct {
 // buildPlan works out the smallest set of bumps that clears the findings: one
 // module bump per affected module, plus a toolchain bump for standard library
 // findings, each to the lowest fixed version above what the build uses.
-func buildPlan(s *scan, b *build, reachableOnly bool) *plan {
+func buildPlan(s *scan, b *build, includeAll bool) *plan {
 	p := &plan{}
 
 	// One bump per module has to clear every advisory for it, so keep the
@@ -196,7 +196,7 @@ func buildPlan(s *scan, b *build, reachableOnly bool) *plan {
 	seen := map[string]bool{}
 
 	for _, f := range s.findings {
-		if reachableOnly && !f.called() {
+		if !includeAll && !f.called() {
 			if !seen[f.OSV] {
 				seen[f.OSV] = true
 				p.skipped++

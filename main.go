@@ -26,7 +26,8 @@ finding, then runs go build, go test and a second scan to prove the result.
 flags:
   -n              dry run: print the plan, change nothing, exit 1 if there
                   is something to fix
-  -reachable      only fix findings with a call path, not every finding
+  -all            also fix findings without a call path (default matches
+                  govulncheck: only findings with a call path)
   -no-modules     do not touch module versions
   -no-toolchain   do not touch the go/toolchain directives
   -dir string     module directory (default ".")
@@ -52,7 +53,7 @@ func run(args []string) int {
 	fs.Usage = func() { fmt.Fprint(errW, usage) }
 
 	dryRun := fs.Bool("n", false, "dry run")
-	reachable := fs.Bool("reachable", false, "only fix findings with a call path")
+	all := fs.Bool("all", false, "also fix findings without a call path")
 	noModules := fs.Bool("no-modules", false, "skip module fixes")
 	noToolchain := fs.Bool("no-toolchain", false, "skip toolchain fixes")
 	dir := fs.String("dir", ".", "module directory")
@@ -72,7 +73,7 @@ func run(args []string) int {
 	r := &runner{dir: *dir, verbose: *verbose}
 	code, err := fix(r, options{
 		dryRun:      *dryRun,
-		reachable:   *reachable,
+		all:         *all,
 		noModules:   *noModules,
 		noToolchain: *noToolchain,
 		govulncheck: *gvc,
@@ -89,7 +90,7 @@ func run(args []string) int {
 
 type options struct {
 	dryRun      bool
-	reachable   bool
+	all         bool
 	noModules   bool
 	noToolchain bool
 	govulncheck string
@@ -111,11 +112,11 @@ func fix(r *runner, o options) (int, error) {
 		fmt.Fprintf(outW, "scanner: %s\n", s.scanner)
 	}
 
-	p := buildPlan(s, b, o.reachable)
-	if !o.reachable && p.findings > p.called {
+	p := buildPlan(s, b, o.all)
+	if !o.all && p.skipped > 0 {
 		p.notes = append(p.notes,
-			fmt.Sprintf("%d advisory(s) have no call path in this build; -reachable would skip them",
-				p.findings-p.called))
+			fmt.Sprintf("%d advisory(s) have no call path in this build; -all would include them",
+				p.skipped))
 	}
 	if o.noToolchain {
 		p.toolchain = nil
@@ -126,7 +127,7 @@ func fix(r *runner, o options) (int, error) {
 
 	if p.findings == 0 {
 		if p.skipped > 0 {
-			fmt.Fprintf(outW, "clean: no advisories with a call path (%d skipped by -reachable)\n", p.skipped)
+			fmt.Fprintf(outW, "clean: no advisories with a call path (%d skipped; -all includes them)\n", p.skipped)
 		} else {
 			fmt.Fprintln(outW, "clean: no advisories")
 		}
@@ -196,7 +197,7 @@ func verify(r *runner, o options) (int, error) {
 	left := 0
 	seen := map[string]bool{}
 	for _, f := range s.findings {
-		if o.reachable && !f.called() {
+		if !o.all && !f.called() {
 			continue
 		}
 		if seen[f.OSV] {

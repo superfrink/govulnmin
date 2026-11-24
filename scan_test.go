@@ -83,7 +83,7 @@ func TestNextFixedToolchainMinorBranch(t *testing.T) {
 
 func TestBuildPlanMinimalBumps(t *testing.T) {
 	s := loadScan(t, "testdata/scan.json")
-	p := buildPlan(s, testBuild(), false)
+	p := buildPlan(s, testBuild(), true)
 
 	if p.toolchain == nil {
 		t.Fatal("expected a toolchain change")
@@ -100,22 +100,25 @@ func TestBuildPlanMinimalBumps(t *testing.T) {
 	}
 }
 
-func TestBuildPlanReachable(t *testing.T) {
-	// Every finding in the fixture is package-level, so -reachable leaves
-	// nothing to do.
+func TestBuildPlanDefaultReachable(t *testing.T) {
+	// Every finding in the fixture is package-level, so the default (reachable
+	// only) leaves nothing to do, while -all plans the bump.
 	s := loadScan(t, "testdata/scan.json")
-	p := buildPlan(s, testBuild(), true)
+	p := buildPlan(s, testBuild(), false)
 	if !p.empty() {
 		t.Fatalf("expected an empty plan, got %+v", p)
 	}
-	if p.findings != 0 || p.skipped != 66 {
-		t.Errorf("findings = %d, skipped = %d, want 0 and 66", p.findings, p.skipped)
+	if p.skipped != 66 {
+		t.Errorf("skipped = %d, want 66", p.skipped)
+	}
+	if len(buildPlan(s, testBuild(), true).modules) != 1 {
+		t.Error("-all did not plan the module bump")
 	}
 }
 
 func TestBuildPlanModuleOnly(t *testing.T) {
 	s := loadScan(t, "testdata/module-only.json")
-	p := buildPlan(s, testBuild(), false)
+	p := buildPlan(s, testBuild(), true)
 	if p.toolchain != nil {
 		t.Errorf("unexpected toolchain change: %+v", p.toolchain)
 	}

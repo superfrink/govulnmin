@@ -60,7 +60,7 @@ func TestDryRunPrintsPlanAndLeavesGoModAlone(t *testing.T) {
 
 	var c capture
 	c.start(t)
-	code := run([]string{"-n", "-no-toolchain", "-govulncheck", fake, "-dir", dir})
+	code := run([]string{"-n", "-all", "-no-toolchain", "-govulncheck", fake, "-dir", dir})
 	// A dry run with work to do is a check that failed: exit 1.
 	if code != 1 {
 		t.Fatalf("exit %d, want 1\nstderr: %s", code, c.err.String())
@@ -82,7 +82,7 @@ func TestDryRunPrintsPlanAndLeavesGoModAlone(t *testing.T) {
 	}
 }
 
-func TestReachableSkipsUncalledFindings(t *testing.T) {
+func TestDefaultSkipsUncalledFindings(t *testing.T) {
 	data, err := os.ReadFile("testdata/scan.json")
 	if err != nil {
 		t.Fatal(err)
@@ -91,16 +91,35 @@ func TestReachableSkipsUncalledFindings(t *testing.T) {
 
 	var c capture
 	c.start(t)
-	code := run([]string{"-n", "-reachable", "-govulncheck", fake, "-dir", dir})
+	code := run([]string{"-n", "-govulncheck", fake, "-dir", dir})
 	if code != 0 {
 		t.Fatalf("exit %d, want 0\nstderr: %s", code, c.err.String())
 	}
 	out := c.out.String()
 	if !strings.Contains(out, "no advisories with a call path") {
-		t.Errorf("expected a clean -reachable result:\n%s", out)
+		t.Errorf("expected a clean default (reachable) result:\n%s", out)
 	}
 	if strings.Contains(out, "golang.org/x/text  v0.3.0") {
-		t.Errorf("-reachable still planned a bump:\n%s", out)
+		t.Errorf("the default still planned a bump:\n%s", out)
+	}
+}
+
+func TestAllIncludesUncalledFindings(t *testing.T) {
+	data, err := os.ReadFile("testdata/scan.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, fake := testModule(t, string(data))
+
+	var c capture
+	c.start(t)
+	code := run([]string{"-n", "-all", "-govulncheck", fake, "-dir", dir})
+	if code != 1 {
+		t.Fatalf("exit %d, want 1\nstderr: %s", code, c.err.String())
+	}
+	out := c.out.String()
+	if !strings.Contains(out, "golang.org/x/text  v0.3.0") {
+		t.Errorf("-all did not plan the bump:\n%s", out)
 	}
 }
 
