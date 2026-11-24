@@ -9,13 +9,56 @@ Fixes Go vulnerabilities with the smallest version bump that clears them, then p
 
 ## What it does
 
-1. Runs `govulncheck` and reads the JSON output.
-2. For each affected module, takes the lowest fixed version above the one in your build, and for standard library findings, the lowest fixed Go release. Go versions are read from the advisory's own ranges, not from govulncheck's `fixed_version` field, which reports the fix in the *latest* range and can be several releases too high.
-3. Bumps the toolchain first, then runs one `go get` for the modules and `go mod tidy`.
-4. Runs `go build ./...` and `go test ./...`.
-5. Scans again. If anything is still there, it says so and exits non-zero.
+1. Runs `govulncheck` over the packages you name (default `./...`) and reads the JSON output.
+2. Works out the lowest fixed version for each affected module, and for standard library findings the lowest fixed Go release. Versions are read from the advisory's own ranges, not from govulncheck's `fixed_version` field, which reports the fix in the *latest* range and can be several releases too high.
+3. Bumps the toolchain first with `go mod edit -toolchain`, then runs one `go get` for the modules and `go mod tidy`.
+4. Runs `go build` and `go test` over the same packages.
+5. Scans again. Anything that survives is listed, and the exit status is 1.
 
-If the build or the tests fail, go.mod and go.sum are left as they are so you can inspect the diff.
+With `-n` it stops after step 2: it prints the plan, changes nothing, and exits 1 if the plan is not empty. So a plain `govulnmin -n` is a vulnerability check you can put in CI.
+
+## Exit status
+
+| code | meaning |
+| --- | --- |
+| `0` | nothing to do, or the fixes were applied and the rescan came back clean |
+| `1` | advisories remain: a dry run with work to do, an advisory with no applicable fix, or a finding that survived the fix |
+| `2` | error: bad flags, a failed scan, a failed `go get` or `go mod tidy`, or a failed build or test |
+
+Exit 2 is a tool-level error, so it never means "nothing happened". A failed build or test leaves the tree modified; see below.
+
+## When the build or the tests fail
+
+Nothing is reverted. The bumps are already in go.mod by the time the build runs, so a failure stops there, exits 2, and leaves go.mod, go.sum and the rest of the tree exactly as govulnmin left them — new versions included — for you to look at:
+
+```
+$ govulnmin
+scanning example.com/fx with go1.25.0
+scanner: govulncheck@v1.8.0
+1 advisory(s), 1 with a call path
+
+  golang.org/x/text  v0.3.0 -> v0.3.7  (GO-2021-0113)
+$ go get golang.org/x/text@v0.3.7
+go: upgraded golang.org/x/text v0.3.0 => v0.3.7
+$ go mod tidy
+$ go build ./...
+./fx.go:3:24: cannot use "boom" (untyped string constant) as int value
+govulnmin: exit status 1
+
+the version bumps are still in go.mod; check the diff with "git diff go.mod go.sum"
+```
+
+```
+git diff go.mod go.sum      # what changed
+git restore go.mod go.sum   # put it back
+```
+
+What the diff contains is decided by `go get` and `go mod tidy`, not just by the plan. go.sum is rewritten; tidy can add indirect requirements or drop a require line that nothing imports any more; if only the toolchain was bumped, that directive is all that moves. If `go get` itself fails, the toolchain bump that ran before it is still in go.mod.
+
+Two consequences worth knowing:
+
+- govulnmin starts from the tree in front of it, not from HEAD. A dirty go.mod after a failure changes the next run's starting point, so restore it before trying again.
+- A failed build or test does not mean the bump was wrong. It means the new version did not compile or did not pass. Read the error before reaching for `git restore`.
 
 ## Install
 
@@ -31,7 +74,7 @@ It needs `govulncheck`. If that is not on your PATH, govulnmin runs the latest o
 
 ```
 govulnmin            # fix this module
-govulnmin -n         # dry run: show the plan, change nothing
+govulnmin -n         # dry run: show the plan, change nothing, exit 1 if there is work
 govulnmin ./cmd/...  # limit the scan
 ```
 
@@ -47,22 +90,20 @@ scanner: govulncheck@v1.8.0
              no fix exists for Go 1.25; the lowest fixed release is go1.26.11
   golang.org/x/text  v0.3.0 -> v0.41.0  (GO-2020-0015, GO-2021-0113, GO-2022-1059 and 2 more)
 
-dry run: no changes made
+dry run: no changes made, 2 change(s) needed
 ```
 
 Flags:
 
 | flag | meaning |
 | --- | --- |
-| `-n` | dry run |
+| `-n` | dry run: print the plan, change nothing, exit 1 if there is something to fix |
 | `-reachable` | only fix findings with a call path, instead of every finding |
 | `-no-modules` | leave module versions alone |
 | `-no-toolchain` | leave the go and toolchain directives alone |
 | `-dir` | module directory (default `.`) |
 | `-govulncheck` | govulncheck binary to use |
 | `-v` | echo each command |
-
-Exit status: `0` fixed or already clean, `1` vulnerabilities remain, `2` error (including a failed build or test).
 
 ## What "smallest" means
 
@@ -78,7 +119,7 @@ Only the range that contains your current version counts, so a build on Go 1.25 
 Two cases are reported instead of applied:
 
 - **A new major version.** If the only fix is v3 of a module you use at v1, that is a code change and a module path change, not a bump. govulnmin skips it and says so.
-- **No fix.** Some advisories have no fixed release yet. They are listed, not applied.
+- **No fix.** Some advisories have no fixed release yet. They are listed, not applied, and the exit status is 1: the module is still vulnerable.
 
 ## Library or application
 
@@ -86,20 +127,47 @@ For an application, bumping the toolchain is what you want. For a library, `go m
 
 ## Run it on a branch
 
-govulnmin edits go.mod and go.sum in place. Start from a clean tree:
+govulnmin edits go.mod and go.sum in place, and does not roll them back when a build or test fails. Start from a clean tree:
 
 ```
 git switch -c vuln-fix
 govulnmin -n
 govulnmin
-```
-
-If the build or tests fail, nothing is reverted:
-
-```
 git diff go.mod go.sum
-git restore go.mod go.sum
 ```
+
+If the build or the tests fail, the diff is still there to read; `git restore go.mod go.sum` discards it.
+
+## Limitations
+
+### It only knows about go.mod
+
+govulnmin fixes the module in `-dir`: the `go`, `toolchain` and `require` lines, and go.sum. A Go version is usually pinned in several more places, and it touches none of them:
+
+- `FROM golang:1.21` in a Dockerfile, and any `--build-arg GO_VERSION=`
+- `go-version:` in CI workflows, and the go versions in a test matrix
+- `.tool-versions`, `mise.toml`, `asdf`, `goenv`, a Makefile default, a devcontainer image
+- `golang:` image tags in docker-compose or Helm values
+
+Bumping the toolchain for a Dockerfile means editing the Dockerfile by hand after govulnmin tells you which release you need.
+
+Also not covered:
+
+- **Nested modules and workspaces.** One module per run, the one in `-dir`. Sibling modules listed in a `go.work` are left alone; run it once per module.
+- **`vendor/`.** govulnmin runs `go get` and `go mod tidy`, never `go mod vendor`. In a vendored repo the build after a bump fails with `inconsistent vendoring`; run `go mod vendor` and commit the result.
+- **`replace` directives.** The version of a replaced module is read from `go list -m`, which reports the version *before* the replacement. If a replace pins a module below the fixed release, govulnmin sees the higher version and reports "no fixed version applies to this build" instead of bumping it. Check replace directives by hand when a `-n` run looks too quiet.
+- **Code changes.** govulnmin moves versions. If an advisory needs a new major version, an API change, or work in your own code, it reports it and stops.
+- **One build configuration.** `go build ./...` and `go test ./...` run on the host platform, with no build tags, so platform-specific files and tag-gated code are not compiled. A bump can still break them.
+
+### Versions have to be semver
+
+Go module versions are always semver, a pseudo-version (`v0.0.0-20200101120000-abcdef123456`) or `vX.Y.Z+incompatible`, and govulnmin parses all three. Build metadata is ignored, a pre-release sorts below its release, and `gopkg.in`'s `.vN` and module paths ending in `/vN` are recognised as majors.
+
+Anything else is not understood. If an advisory's `fixed` value will not parse as a version, that advisory is skipped with a note and the exit status stays 1, so nothing is silently dropped. One soft spot: a pseudo-version is compared as the pre-release of its base version, which orders it correctly against tagged releases but can be slightly off when two pseudo-versions are compared to each other. This is rare, since advisories list tagged fixes.
+
+### It is only as complete as govulncheck
+
+Findings come from `govulncheck`'s symbol-level analysis. Calls that only happen through reflection, `unsafe`, plugins or generated wrappers can be missed, and by default govulnmin fixes findings with and without a call path (`-reachable` narrows it to the ones it can trace). A clean exit means govulncheck is clean, not that the program is safe.
 
 ## Build and test
 

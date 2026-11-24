@@ -5,8 +5,8 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly, Monday 05:17 UTC. A dry run, so an advisory in the runner's Go
-    # release shows up here without failing anything.
+    # Weekly, Monday 05:17 UTC. A dry run, and a dry run exits 1 when it finds
+    # something to fix, so this job goes red when a new advisory lands.
     - cron: '17 5 * * 1'
   workflow_dispatch:
 
@@ -23,8 +23,10 @@ jobs:
         with:
           go-version: stable
 
-      # Dogfooding: govulnmin scans itself. A dry run, so a stdlib advisory
-      # in the runner's Go release does not break CI.
+      # Dogfooding: govulnmin scans itself. Exit 1 means there is work to do --
+      # usually a stdlib advisory in the runner's Go release, which is fixed by
+      # bumping the go/toolchain directive. That is a real finding, so the job
+      # is allowed to fail; the badge is the reminder.
       - name: govulnmin -n
         run: go run . -n -v
 
