@@ -68,7 +68,28 @@ go install github.com/superfrink/govulnmin@latest
 
 Or take a binary from [releases](https://github.com/superfrink/govulnmin/releases).
 
-It needs `govulncheck`. If that is not on your PATH, govulnmin runs the latest one with `go run`, so the scan is never done by a stale copy.
+It needs `govulncheck`. If that is not on your PATH, govulnmin runs `go run golang.org/x/vuln/cmd/govulncheck@latest`, so the scan is never done by a stale copy. That is a deliberate exception to pinning; CI pins the version instead.
+
+## Verifying a release
+
+Releases are signed and attested. No account and no key needed to check them:
+
+```
+# 1. Check the signature on the checksum list.
+cosign verify-blob \
+  --bundle checksums.txt.sigstore.json \
+  --certificate-identity-regexp '^https://github.com/superfrink/govulnmin/.github/workflows/release.yml@refs/tags/v.+$' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  checksums.txt
+
+# 2. Check your download against the signed list.
+sha256sum -c --ignore-missing checksums.txt
+
+# 3. Check which commit and workflow run built the file.
+gh attestation verify govulnmin_0.1.0_linux_amd64.tar.gz --repo superfrink/govulnmin
+```
+
+Signing is keyless: cosign takes a short-lived certificate from Fulcio, issued to the workflow itself, and records the signing in the Rekor transparency log. That certificate cannot be produced by anything but a run of `.github/workflows/release.yml` in this repository on a `v*` tag, which is what ties the signature to the code: the attestation pins the commit SHA, `go version -m govulnmin` prints the same revision embedded in the binary, and the build is reproducible (`-trimpath`, commit timestamps), so a tag can be rebuilt and the hashes compared.
 
 ## Use
 
@@ -177,7 +198,9 @@ go vet ./...
 gofmt -l .
 ```
 
-CI runs those on Go 1.22 and stable, cross-compiles linux/darwin/windows on amd64 and arm64, and validates `.goreleaser.yaml`. Pushing a `v*` tag builds the release binaries.
+CI runs those on Go 1.22 and stable, cross-compiles linux/darwin/windows on amd64 and arm64, and validates `.goreleaser.yaml`. Pushing a `v*` tag builds the release binaries on a pinned Go patch, signs `checksums.txt` with cosign and attests the provenance of every upload.
+
+The workflows pin each action to a commit SHA (the tag is in the comment), and pin `goreleaser`, `govulncheck` and cosign to exact versions: those run before anything is verified, so what they do should not change without a commit.
 
 ## License
 

@@ -18,9 +18,11 @@ jobs:
     name: scan this module
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
+          # Floats on purpose: advisories land in the newest Go release first,
+          # and the point of this job is to notice them.
           go-version: stable
 
       # Dogfooding: govulnmin scans itself. Exit 1 means there is work to do --
@@ -30,6 +32,8 @@ jobs:
       - name: govulnmin -n
         run: go run . -n -v
 
+      # Pinned rather than @latest: a scanner is code that runs before anything
+      # is verified, so what it does should not change without a commit.
       - name: govulncheck
         continue-on-error: true
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.10.0 ./...
